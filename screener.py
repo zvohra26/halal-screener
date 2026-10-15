@@ -1,21 +1,20 @@
 import yfinance as yf
 
-# Industries that fail the business check (matched as keywords in Yahoo's industry name)
 HARAM_KEYWORDS = [
     "bank", "insurance", "credit services", "mortgage",
     "gambling", "casino", "tobacco",
     "brewer", "winer", "distiller",
 ]
 
-DEBT_LIMIT = 0.30   # 30%
-CASH_LIMIT = 0.30   # 30%
+DEBT_LIMIT = 0.30
+CASH_LIMIT = 0.30
 
 
 def get_data(ticker):
     """Pull the numbers we need from Yahoo Finance."""
     info = yf.Ticker(ticker).info
     return {
-        "name": info.get("longName", ticker),
+        "name": info.get("longName", ticker.upper()),
         "industry": info.get("industry", "Unknown"),
         "market_cap": info.get("marketCap"),
         "debt": info.get("totalDebt"),
@@ -32,31 +31,49 @@ def business_check(industry):
     return True
 
 
-def screen(ticker):
+def analyze(ticker):
+    """Screen a stock and return the results as a dictionary."""
     d = get_data(ticker)
-
-    print(f"\n{d['name']} ({ticker.upper()})")
-    print(f"Industry: {d['industry']}")
+    result = {
+        "ticker": ticker.upper(),
+        "name": d["name"],
+        "industry": d["industry"],
+        "debt_ratio": None,
+        "cash_ratio": None,
+        "status": None,
+        "reasons": [],
+    }
 
     if not business_check(d["industry"]):
-        print("Result: FAIL (business activity not permissible)")
-        return
+        result["status"] = "FAIL"
+        result["reasons"].append("Business activity is not permissible")
+        return result
 
     if not d["market_cap"] or d["debt"] is None or d["cash"] is None:
-        print("Result: UNKNOWN (missing financial data)")
-        return
+        result["status"] = "UNKNOWN"
+        result["reasons"].append("Missing financial data")
+        return result
 
-    debt_ratio = d["debt"] / d["market_cap"]
-    cash_ratio = d["cash"] / d["market_cap"]
+    result["debt_ratio"] = d["debt"] / d["market_cap"]
+    result["cash_ratio"] = d["cash"] / d["market_cap"]
 
-    print(f"Debt ratio: {debt_ratio:.1%}  (limit {DEBT_LIMIT:.0%})")
-    print(f"Cash ratio: {cash_ratio:.1%}  (limit {CASH_LIMIT:.0%})")
+    if result["debt_ratio"] >= DEBT_LIMIT:
+        result["reasons"].append(
+            f"Debt ratio {result['debt_ratio']:.1%} is above the {DEBT_LIMIT:.0%} limit"
+        )
+    if result["cash_ratio"] >= CASH_LIMIT:
+        result["reasons"].append(
+            f"Cash ratio {result['cash_ratio']:.1%} is above the {CASH_LIMIT:.0%} limit"
+        )
 
-    if debt_ratio < DEBT_LIMIT and cash_ratio < CASH_LIMIT:
-        print("Result: PASS")
-    else:
-        print("Result: FAIL (financial ratios too high)")
+    result["status"] = "FAIL" if result["reasons"] else "PASS"
+    return result
 
 
-for t in ["F", "T", "TSLA", "NVDA", "KO"]:
-    screen(t)
+# This part only runs when you run screener.py directly, not when the website uses it
+if __name__ == "__main__":
+    while True:
+        ticker = input("\nEnter a ticker (or 'q' to quit): ")
+        if ticker.lower() == "q":
+            break
+        print(analyze(ticker))
