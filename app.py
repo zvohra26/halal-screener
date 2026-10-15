@@ -36,6 +36,10 @@ if ticker:
             st.error("Couldn't fetch data for that ticker. Check the spelling and try again.")
             st.stop()
 
+    if r["name"] == r["ticker"] and r["industry"] == "Unknown":
+        st.error(f"Couldn't find a stock with the ticker '{r['ticker']}'. Check the spelling.")
+        st.stop()
+
     with st.container(border=True):
         st.subheader(f"{r['name']} ({r['ticker']})")
         st.caption(f"Industry: {r['industry']}")
