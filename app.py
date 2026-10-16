@@ -2,6 +2,7 @@ import base64
 import html
 import streamlit as st
 from screener import analyze, suggest, DEBT_LIMIT, CASH_LIMIT
+from ethics import get_flags, LAST_UPDATED, UN_DATABASE_URL
 
 st.set_page_config(page_title="CREST · Halal Stock Screening", page_icon="🛡️")
 
@@ -43,6 +44,7 @@ div[data-testid="stButton"] button:hover {border-color: #1F7A5A; color: #1F7A5A;
 .pass {background: #E3F4EC; color: #1F7A5A;}
 .fail {background: #FCE8E6; color: #B3261E;}
 .unknown {background: #FFF4D6; color: #8A6100;}
+.flagged {background: #FFF4D6; color: #8A6100;}
 .reason {color: #444; font-size: .95rem; margin: .2rem 0;}
 .ratios {display: flex; gap: 1rem; margin-top: 1.2rem; flex-wrap: wrap;}
 .ratio {flex: 1; min-width: 200px; background: #F3F0E8; border-radius: 14px; padding: 1rem 1.1rem;}
@@ -51,6 +53,14 @@ div[data-testid="stButton"] button:hover {border-color: #1F7A5A; color: #1F7A5A;
 .bar {height: 8px; background: #E4E0D6; border-radius: 999px; overflow: hidden;}
 .fill {height: 100%; border-radius: 999px;}
 .limit {font-size: .75rem; color: #888; margin-top: .4rem;}
+.flags {margin-top: 1.4rem; border-top: 1px solid #ECE8DF; padding-top: 1rem;}
+.flags-title {font-weight: 700; font-size: .95rem; margin-bottom: .6rem;}
+.flag {background: #FFF8E6; border-left: 3px solid #C9A227; border-radius: 8px; padding: .7rem .9rem; margin-bottom: .6rem;}
+.flag-cat {font-weight: 700; color: #8A6100; font-size: .9rem;}
+.flag-reason {font-size: .88rem; color: #444; margin: .25rem 0;}
+.flag-src {font-size: .78rem; color: #777;}
+.flag-src a {color: #1F7A5A; text-decoration: none; font-weight: 600;}
+.flags-note {font-size: .75rem; color: #999; margin-top: .4rem;}
 .srclink {margin-top: 1rem; font-size: .85rem;}
 .srclink a {color: #1F7A5A; text-decoration: none; font-weight: 600;}
 .footer {text-align: center; color: #999; font-size: .8rem; margin-top: 2.5rem;}
@@ -80,11 +90,13 @@ with info_col:
 **3. Cash ratio:** cash and short-term investments ÷ market cap must be under **{CASH_LIMIT:.0%}**.
 
 Scholars differ on exact limits. CREST follows common AAOIFI-style thresholds.
+
+**Ethical flags (separate from Shariah screening):** a stock can pass Shariah screening and still be flagged for ethical concerns, such as weapons manufacturing or involvement in Israeli settlements. Every flag cites an outside source. Flags don't change the Shariah result. Whether they affect your decision is up to you.
 """)
 
 with src_col:
     with st.popover("ⓘ Data sources"):
-        st.markdown("""
+        st.markdown(f"""
 **📈 Market data: Yahoo Finance**
 
 Market cap, total debt, cash and short-term investments, and industry classification are pulled live from [Yahoo Finance](https://finance.yahoo.com) every time you search, using the open-source [yfinance](https://github.com/ranaroussi/yfinance) library.
@@ -92,6 +104,13 @@ Market cap, total debt, cash and short-term investments, and industry classifica
 **🕌 Screening standards: AAOIFI**
 
 Thresholds are based on [AAOIFI](https://aaoifi.com) (Accounting and Auditing Organization for Islamic Financial Institutions) Shariah Standard No. 21 on shares, one of the most widely referenced standards in Islamic finance. It sets a 30% limit on interest-bearing debt and on interest-bearing cash and investments, relative to market value.
+
+**⚠️ Ethical flags**
+
+- *Weapons & defense:* Yahoo Finance industry classification
+- *Settlement activity:* [UN Human Rights Office database]({UN_DATABASE_URL}) of businesses involved in Israeli settlements
+
+Ethical data last updated: {LAST_UPDATED}.
 
 **⚖️ Good to know**
 
@@ -136,6 +155,21 @@ def ratio_block(label, value, limit):
     )
 
 
+def flags_block(flags):
+    if not flags:
+        return ""
+    items = "".join(
+        f'<div class="flag"><div class="flag-cat">⚠ {html.escape(f["category"])}</div>'
+        f'<div class="flag-reason">{html.escape(f["reason"])}</div>'
+        f'<div class="flag-src">Source: <a href="{f["url"]}" target="_blank">{html.escape(f["source"])} ↗</a></div></div>'
+        for f in flags
+    )
+    return (
+        f'<div class="flags"><div class="flags-title">Ethical flags</div>{items}'
+        f'<div class="flags-note">These flags come from outside sources and do not change the Shariah result. Whether they affect your decision is up to you.</div></div>'
+    )
+
+
 # ---------- Results ----------
 if ticker:
     query = ticker.strip()
@@ -151,12 +185,17 @@ if ticker:
         show_suggestions(query)
         st.stop()
 
+    flags = get_flags(r["ticker"], r["industry"])
+
     verdicts = {
         "PASS": ("pass", "✓ Passes Shariah screening"),
         "FAIL": ("fail", "✕ Does not pass"),
         "UNKNOWN": ("unknown", "! Not enough data to screen"),
     }
     cls, text = verdicts[r["status"]]
+    if r["status"] == "PASS" and flags:
+        cls, text = "flagged", "✓ Passes Shariah screening · ⚠ Ethical concerns flagged"
+
     reasons = "".join(f'<div class="reason">• {html.escape(x)}</div>' for x in r["reasons"])
 
     ratios = ""
@@ -173,7 +212,7 @@ if ticker:
         f'<div class="name">{html.escape(r["name"])} ({r["ticker"]})</div>'
         f'<div class="industry">{html.escape(r["industry"])}</div>'
         f'<div class="verdict {cls}">{text}</div>'
-        f'{reasons}{ratios}'
+        f'{reasons}{ratios}{flags_block(flags)}'
         f'<div class="srclink"><a href="https://finance.yahoo.com/quote/{html.escape(r["ticker"])}" target="_blank">View source data on Yahoo Finance ↗</a></div>'
         f'</div>',
         unsafe_allow_html=True,
