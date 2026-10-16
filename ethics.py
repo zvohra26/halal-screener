@@ -3,12 +3,17 @@
 
 LAST_UPDATED = "October 2026"
 
-UN_DATABASE_URL = "https://www.ohchr.org/en/press-releases/2026/09/un-human-rights-updates-list-companies-involved-israeli-settlements-occupied"
+UN_DATABASE_URL = "https://www.ohchr.org/en/documents/thematic-reports/ahrc6320-database-all-business-enterprises-involved-activities-detailed"
 
-# US-listed companies in the UN Human Rights Office database of businesses
-# involved in activities in Israeli settlements. Only add a company after
-# confirming it in the official list. Format: "TICKER": "Name as listed by the UN"
+# US-listed companies in the UN Human Rights Office database (report A/HRC/63/20,
+# September 2026, Annex I). Format: "TICKER": ("Name as listed by the UN", "Involvement type")
 UN_SETTLEMENT_LIST = {
+    "ABNB": ("Airbnb Inc.", "Contribution"),
+    "BKNG": ("Booking Holdings Inc.", "Contribution"),
+    "EXPE": ("Expedia Group Inc.", "Contribution"),
+    "MSI": ("Motorola Solutions, Inc.", "Contribution"),
+    "RMAX": ("Re/Max Holdings, Inc.", "Direct linkage"),
+    "TRIP": ("TripAdvisor, Inc.", "Contribution"),
 }
 
 
@@ -26,10 +31,15 @@ def get_flags(ticker, industry):
         })
 
     if ticker in UN_SETTLEMENT_LIST:
+        name, involvement = UN_SETTLEMENT_LIST[ticker]
         flags.append({
             "category": "Settlement activity",
-            "reason": "Listed in the UN Human Rights Office database of businesses involved in activities in Israeli settlements in the occupied Palestinian territory.",
-            "source": "UN Human Rights Office (OHCHR)",
+            "reason": (
+                f"Listed as \"{name}\" in the UN Human Rights Office's 2026 database of businesses "
+                f"involved in activities related to Israeli settlements in the occupied Palestinian "
+                f"territory. UN-assessed involvement: {involvement.lower()}."
+            ),
+            "source": "UN Human Rights Office (OHCHR), report A/HRC/63/20",
             "url": UN_DATABASE_URL,
         })
 
