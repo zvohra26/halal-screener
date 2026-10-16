@@ -1,5 +1,6 @@
 import base64
 import html
+import re
 import streamlit as st
 from screener import analyze, suggest, DEBT_LIMIT, CASH_LIMIT
 from ethics import get_flags, LAST_UPDATED, UN_DATABASE_URL
@@ -10,7 +11,10 @@ st.set_page_config(page_title="CREST · Halal Stock Screening", page_icon="🛡�
 # ---------- Cached data calls (faster, fewer requests to Yahoo) ----------
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_analyze(t):
-    return analyze(t)
+    r = analyze(t)
+    if r["name"] == r["ticker"] and r["industry"] == "Unknown":
+        raise LookupError("No data returned")  # errors are never cached, so the next try is fresh
+    return r
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -60,7 +64,6 @@ st.markdown("""
 .hero .who {color: rgba(255,255,255,0.72); font-size: .92rem; margin-top: .6rem; line-height: 1.5; max-width: 720px; position: relative;}
 div[data-testid="stButton"] button {border-radius: 999px; border: 1px solid #D9D4C7; background: white; font-weight: 600;}
 div[data-testid="stButton"] button:hover {border-color: #1F7A5A; color: #1F7A5A;}
-div[data-testid="stVerticalBlockBorderWrapper"] {background: white; border-radius: 18px;}
 .card {background: white; border-radius: 18px; padding: 1.6rem; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #ECE8DF; margin-top: 1rem;}
 .card .name {font-size: 1.5rem; font-weight: 700;}
 .card .industry {color: #6B6B6B; font-size: .9rem; margin-top: .15rem;}
@@ -143,6 +146,19 @@ def remember(sym, short):
     st.session_state.history = [(sym, short)] + rest[:5]
 
 
+def looks_like_ticker(q):
+    """True for inputs like AAPL, be, BRK-B, BRK.B. False for names like 'lucid motors'."""
+    return re.fullmatch(r"[A-Za-z]{1,5}([.\-][A-Za-z]{1,2})?", q) is not None
+
+
+def search_companies(query):
+    """Search by name or ticker. If the full phrase finds nothing, retry with the first word."""
+    options = cached_suggest(query)
+    if not options and " " in query:
+        options = cached_suggest(query.split()[0])
+    return options
+
+
 def verdict_for(r, flags):
     if r["status"] == "PASS" and flags:
         return "flagged", "✓ Passes Shariah screening · ⚠ Ethical concerns flagged", "⚠ Flagged"
@@ -151,16 +167,6 @@ def verdict_for(r, flags):
         "FAIL": ("fail", "✕ Does not pass", "✕ Fail"),
         "UNKNOWN": ("unknown", "! Not enough data to screen", "! No data"),
     }[r["status"]]
-
-
-def show_suggestions(query):
-    options = cached_suggest(query)
-    if options:
-        st.write("**Did you mean:**")
-        for sym, name in options:
-            st.button(f"{sym}  ·  {name}", key=f"sug_{sym}", on_click=set_ticker, args=(sym,))
-    else:
-        st.caption("No similar stocks found. Try the company name instead, e.g. 'apple'.")
 
 
 def ratio_block(label, value, limit):
@@ -211,19 +217,28 @@ with left:
         )
     else:
         query = ticker.strip()
-        with st.spinner("Pulling live data..."):
+        is_ticker = looks_like_ticker(query)
+
+        with st.spinner("Pulling live data..." if is_ticker else "Searching companies..."):
             try:
-                r = cached_analyze(query)
+                r = cached_analyze(query) if is_ticker else None
             except Exception:
                 r = None
 
         if r is None:
-            options = cached_suggest(query)
-            if any(sym.upper() == query.upper() for sym, _ in options):
+            options = search_companies(query)
+            if is_ticker and any(sym.upper() == query.upper() for sym, _ in options):
                 st.warning(f"{query.upper()} is a real stock, but its data couldn't be loaded right now. Please try again in a minute.")
+            elif options:
+                if is_ticker:
+                    st.error(f"Couldn't find a stock with the ticker '{query.upper()}'.")
+                    st.write("**Did you mean:**")
+                else:
+                    st.write(f"**Companies matching \"{query}\":**")
+                for sym, name in options:
+                    st.button(f"{sym}  ·  {name}", key=f"sug_{sym}", on_click=set_ticker, args=(sym,))
             else:
-                st.error(f"Couldn't find a stock with the ticker '{query.upper()}'.")
-                show_suggestions(query)
+                st.error(f"No stocks found for '{query}'. Try a different spelling or the ticker symbol.")
         else:
             flags = get_flags(r["ticker"], r["industry"])
             cls, text, short = verdict_for(r, flags)
