@@ -69,6 +69,25 @@ def analyze(ticker):
     result["status"] = "FAIL" if result["reasons"] else "PASS"
     return result
 
+def suggest(query, limit=5):
+    """Return up to `limit` (ticker, company name) pairs similar to the query."""
+    try:
+        results = yf.Search(query, max_results=10).quotes
+    except Exception:
+        return []
+
+    options = []
+    for q in results:
+        if q.get("quoteType") != "EQUITY":
+            continue
+        symbol = q.get("symbol")
+        name = q.get("shortname") or q.get("longname") or ""
+        if symbol:
+            options.append((symbol, name))
+        if len(options) >= limit:
+            break
+    return options
+
 
 # This part only runs when you run screener.py directly, not when the website uses it
 if __name__ == "__main__":
