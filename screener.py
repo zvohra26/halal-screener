@@ -1,3 +1,4 @@
+import time
 import yfinance as yf
 
 HARAM_KEYWORDS = [
@@ -11,10 +12,19 @@ CASH_LIMIT = 0.30
 
 
 def get_data(ticker):
-    """Pull the numbers we need from Yahoo Finance."""
-    info = yf.Ticker(ticker).info
+    """Pull the numbers we need from Yahoo Finance, retrying if Yahoo returns nothing."""
+    info = {}
+    for attempt in range(3):
+        try:
+            info = yf.Ticker(ticker).info or {}
+        except Exception:
+            info = {}
+        if info.get("longName") or info.get("shortName"):
+            break
+        time.sleep(1)
+
     return {
-        "name": info.get("longName", ticker.upper()),
+        "name": info.get("longName") or info.get("shortName") or ticker.upper(),
         "industry": info.get("industry", "Unknown"),
         "market_cap": info.get("marketCap"),
         "debt": info.get("totalDebt"),

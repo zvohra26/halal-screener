@@ -217,9 +217,13 @@ with left:
             except Exception:
                 r = None
 
-        if r is None or (r["name"] == r["ticker"] and r["industry"] == "Unknown"):
-            st.error(f"Couldn't find a stock with the ticker '{query.upper()}'.")
-            show_suggestions(query)
+        if r is None:
+            options = cached_suggest(query)
+            if any(sym.upper() == query.upper() for sym, _ in options):
+                st.warning(f"{query.upper()} is a real stock, but its data couldn't be loaded right now. Please try again in a minute.")
+            else:
+                st.error(f"Couldn't find a stock with the ticker '{query.upper()}'.")
+                show_suggestions(query)
         else:
             flags = get_flags(r["ticker"], r["industry"])
             cls, text, short = verdict_for(r, flags)
